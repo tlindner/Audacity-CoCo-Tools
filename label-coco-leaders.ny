@@ -4,7 +4,7 @@
 ;format "labels"
 ;name "Label CoCo Leaders"
 ;action "Finding frequency pairs..."
-;author "Claude"
+;author "tim lindner with Claude (Anthropic, Sonnet 4.5)"
 ;release 1.0
 ;info "Finds frequency ratio patterns"
 ;control ratio-target "Target Ratio" real "" 1.7 0.1 10
