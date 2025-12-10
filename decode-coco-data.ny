@@ -12,17 +12,20 @@
 ;control zero-threshold "Zero Threshold" real "" 0.01 0 1
 ;codetype sal
 
+print "this"
+
 set tolerance = threshold / 100.0
 set target-max = ratio-target + tolerance
 set target-min = ratio-target - tolerance
 set neg-zero-threshold = 0 - zero-threshold
 
 ; Main processing
+set prev = snd-fetch(*track*)
+set curr = snd-fetch(*track*)
+set idx = 1
+set crossings = list()
 set continue-processing = #t
 set skip-zero-crossings = 1
-set prev = snd-fetch(*track*)
-set idx = 1
-set crossings = {4 3 2 1 0}
 set labels = list()
 set current-start = #f
 set current-end = #f
@@ -34,11 +37,46 @@ set low-sum = 0
 set decode-threshold = 2400.0 / 1200.0
 set current-mode = "leader"
 set decode-byte = 0
+set bit-counter = 0
+set byte-counter = 0
+set block-type = 0
+set cheksum = 0
+
+; repload 5 zero crossings
+loop
+repeat 5
+	begin
+		set detect-crossing = #f
+		loop
+			until detect-crossing
+			begin
+				if not(curr) then
+					begin
+						set continue-processing = #f
+						set detect-crossing = #t
+					end
+				else
+					begin
+						if (prev <= zero-threshold & curr > zero-threshold) |
+     				  (prev >= neg-zero-threshold & curr < neg-zero-threshold) then
+							begin
+								; Add new crossing to front of list
+								set crossings @= idx
+								set detect-crossing = #t
+							end
+
+						set prev = curr
+						set idx += 1
+						set curr = snd-fetch(*track*)
+					end
+			end
+		end
+	end
+end
 
 loop
 	while continue-processing
 	begin
-	
 		; Analyze the current window of 5 crossings
 		set c1 = nth(4, crossings)
 		set c3 = nth(2, crossings)
@@ -49,20 +87,16 @@ loop
 		if current-mode = "sync" then
 			begin
 				set freq2 = *sound-srate* / wave2
-				set decode-byte = decode-byte / 2
+				set decode-byte = decode-byte * 2
 				if freq2 > decode-threshold then
-					begin
-						set decode-byte = decode-byte + 128
-						;print "1"
-					end
-				;else
-					;print "0"
+						set decode-byte = decode-byte + 1
+				set decode-byte = logand(decode-byte, 255)
 				
 				if decode-byte = 60 then
 					begin
-						set continue-processing = #f
-						; set current-mode = "length"
-						set labels @= list(idx, "Found sync")
+						set current-mode = "type"
+						set bit-counter = 8
+						set labels @= list(float(nth(16, crossings)) / *sound-srate*, float(c5) / *sound-srate*, "Found sync")
 					end
 				else
 					begin
@@ -70,14 +104,49 @@ loop
 						set end-time = float(c5) / *sound-srate*
 						if (end-time - current-start) >= 1.5 then
 							begin
-								;print current-start
-								;print end-time
 								set current-mode = "leader"
 								set skip-zero-crossings = 1
 							end
 					end
 			end
 	
+		if current-mode = "type" then
+			begin
+				set freq2 = *sound-srate* / wave2
+				set decode-byte = decode-byte * 2
+				if freq2 > decode-threshold then
+						set decode-byte = decode-byte + 1
+				set decode-byte = logand(decode-byte, 255)
+				set bit-counter -= 1
+				if bit-counter = 0 then
+					begin
+						set label-text = strcat("Type: ", format(nil, "~a", decode-byte))
+						set labels @= list(float(nth(16, crossings)) / *sound-srate*, float(c5) / *sound-srate*, label-text)
+						set current-mode = "length"
+						set skip-zero-crossings = 1
+						set bit-counter = 8
+						set block-type = decode-byte
+					end			
+			end
+		
+		if current-mode = "length" then
+			begin
+				set freq2 = *sound-srate* / wave2
+				set decode-byte = decode-byte * 2
+				if freq2 > decode-threshold then
+						set decode-byte = decode-byte + 1
+				set decode-byte = logand(decode-byte, 255)
+				set bit-counter -= 1
+				if bit-counter = 0 then
+					begin
+						set label-text = strcat("Length: ", format(nil, "~a", decode-byte))
+						set labels @= list(float(nth(16, crossings)) / *sound-srate*, float(c5) / *sound-srate*, label-text)
+						set current-mode = "leader"
+						set skip-zero-crossings = 1
+						set bit-counter = 8
+					end			
+			end
+		
 		if current-mode = "leader" then
 			begin
 				; Check for target ratio pattern
@@ -91,8 +160,6 @@ loop
 						set high-freq = max(freq1, freq2)
 						set low-freq = min(freq1, freq2)
 						
-						set labels @= list(start-time, end-time, "ratio pair")
-						set labels @= list(float(c3) / *sound-srate*, "middle")
 						; Check if contiguous with previous match
 						if current-end & start-time = current-end then
 							begin
@@ -136,13 +203,14 @@ loop
 					begin
 						if not(curr) then
 							begin
+								set curr = 0
 								set continue-processing = #f
 								set detect-crossing = #t
 							end
 						else
 							begin
-								if (prev <= 0.0 & curr > 0.0) |
-									 (prev >= 0.0 & curr < 0.0) then
+								if (prev <= zero-threshold & curr > zero-threshold) |
+     						  (prev >= neg-zero-threshold & curr < neg-zero-threshold) then
 									begin
 										; Add new crossing to front of list
 										set crossings @= idx
