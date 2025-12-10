@@ -50,8 +50,13 @@ loop
 			begin
 				set freq2 = *sound-srate* / wave2
 				set decode-byte = decode-byte / 2
-				if freq2 < decode-threshold then
-					set decode-byte = decode-byte + 128
+				if freq2 > decode-threshold then
+					begin
+						set decode-byte = decode-byte + 128
+						;print "1"
+					end
+				;else
+					;print "0"
 				
 				if decode-byte = 60 then
 					begin
@@ -65,8 +70,8 @@ loop
 						set end-time = float(c5) / *sound-srate*
 						if (end-time - current-start) >= 1.5 then
 							begin
-								print current-start
-								print end-time
+								;print current-start
+								;print end-time
 								set current-mode = "leader"
 								set skip-zero-crossings = 1
 							end
@@ -85,7 +90,9 @@ loop
 						set freq2 = *sound-srate* / wave2
 						set high-freq = max(freq1, freq2)
 						set low-freq = min(freq1, freq2)
-				
+						
+						set labels @= list(start-time, end-time, "ratio pair")
+						set labels @= list(float(c3) / *sound-srate*, "middle")
 						; Check if contiguous with previous match
 						if current-end & start-time = current-end then
 							begin
@@ -123,28 +130,29 @@ loop
 		loop
 		repeat skip-zero-crossings
 			begin
-				set curr = snd-fetch(*track*)
 				set detect-crossing = #f
 				loop
 					until detect-crossing
 					begin
 						if not(curr) then
 							begin
-								set detect-crossing = #t
 								set continue-processing = #f
-							end
-					
-						if (prev <= zero-threshold & curr > zero-threshold) |
-							 (prev >= neg-zero-threshold & curr < neg-zero-threshold) then
-							begin
-								; Add new crossing to front of list
-								set crossings @= idx
 								set detect-crossing = #t
 							end
-
-						set prev = curr
-						set idx += 1
-						set curr = snd-fetch(*track*)
+						else
+							begin
+								if (prev <= 0.0 & curr > 0.0) |
+									 (prev >= 0.0 & curr < 0.0) then
+									begin
+										; Add new crossing to front of list
+										set crossings @= idx
+										set detect-crossing = #t
+									end
+		
+								set prev = curr
+								set idx += 1
+								set curr = snd-fetch(*track*)
+							end
 					end
 				end
 			end
